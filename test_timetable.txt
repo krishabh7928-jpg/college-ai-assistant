@@ -1,0 +1,5 @@
+Monday: DSA, Mathematics, Software Engineering
+Tuesday: Digital Electronics, Python, DSA
+Wednesday: Mathematics, Software Engineering, Python
+Thursday: DSA, Digital Electronics
+Friday: Python, Mathematics, DSA
