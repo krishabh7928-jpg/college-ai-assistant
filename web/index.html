@@ -259,7 +259,7 @@
           status.textContent = health.ai_configured ? "AI ready" : "AI key not configured";
           if (!health.ai_configured) {
             document.getElementById("configMessage").textContent =
-              "To enable AI answers, add OPENAI_API_KEY in Vercel Project Settings → Environment Variables, then redeploy. Attendance tools and timetable lookup still work.";
+              "To enable AI answers, add GEMINI_API_KEY or OPENAI_API_KEY in Vercel Project Settings → Environment Variables, then redeploy. Attendance tools and timetable lookup still work.";
           }
           const timetable = await request("/api/default-document");
           if (timetable.text) {

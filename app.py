@@ -113,42 +113,95 @@ def attendance_mark(payload: AttendanceSubmission) -> dict[str, dict[str, str]]:
     return {"record": record}
 
 
+def extract_pdf_text_from_bytes(content: bytes) -> str:
+    pages_text = []
+    try:
+        with pymupdf.open(stream=content, filetype="pdf") as pdf:
+            for page in pdf:
+                text = page.get_text("text").strip()
+                if not text:
+                    blocks = page.get_text("blocks")
+                    text_blocks = [
+                        b[4].strip()
+                        for b in blocks
+                        if len(b) >= 5 and isinstance(b[4], str) and b[4].strip()
+                    ]
+                    text = "\n".join(text_blocks)
+
+                if not text:
+                    annot_texts = []
+                    for annot in page.annots() or []:
+                        info = annot.info
+                        if info and info.get("content"):
+                            annot_texts.append(info["content"])
+                    text = "\n".join(annot_texts)
+
+                if not text:
+                    try:
+                        import shutil
+                        import pytesseract
+                        from PIL import Image
+
+                        if shutil.which("tesseract") is not None:
+                            pixmap = page.get_pixmap(dpi=150)
+                            img = Image.frombytes(
+                                "RGB",
+                                [pixmap.width, pixmap.height],
+                                pixmap.samples,
+                            )
+                            text = pytesseract.image_to_string(img, lang="eng").strip()
+                    except Exception:
+                        pass
+
+                if text:
+                    pages_text.append(text)
+    except Exception as error:
+        logger.exception("Error extracting PDF text")
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not read text from this PDF file: {error}",
+        ) from error
+
+    return "\n\n".join(pages_text).strip()
+
+
 def extract_document_text(filename: str, content: bytes) -> str:
     suffix = Path(filename).suffix.lower()
     try:
         if suffix == ".pdf":
-            with pymupdf.open(stream=content, filetype="pdf") as pdf:
-                pages = []
-                for page in pdf:
-                    page_text = page.get_text("text").strip()
-                    if page_text:
-                        pages.append(page_text)
-                return "\n\n".join(pages)
+            return extract_pdf_text_from_bytes(content)
         if suffix == ".docx":
             document = Document(BytesIO(content))
-            return "\n".join(
-                paragraph.text
-                for paragraph in document.paragraphs
-                if paragraph.text.strip()
-            )
+            paragraphs = [p.text.strip() for p in document.paragraphs if p.text.strip()]
+            for table in document.tables:
+                for row in table.rows:
+                    row_text = " | ".join(
+                        cell.text.strip() for cell in row.cells if cell.text.strip()
+                    )
+                    if row_text:
+                        paragraphs.append(row_text)
+            return "\n".join(paragraphs)
         if suffix == ".txt":
             return content.decode("utf-8-sig")
+    except HTTPException:
+        raise
     except (ValueError, UnicodeDecodeError, OSError) as error:
         raise HTTPException(
             status_code=422,
             detail="Could not read this file. Check that it is a valid PDF, DOCX, or UTF-8 text file.",
         ) from error
     except Exception as error:
-        if suffix in {".pdf", ".docx"}:
-            raise HTTPException(
-                status_code=422,
-                detail="Could not read this file. Check that it is a valid PDF, DOCX, or UTF-8 text file.",
-            ) from error
-        raise
+        logger.exception("Document extraction failed")
+        raise HTTPException(
+            status_code=422,
+            detail="Could not read this file. Check that it is a valid PDF, DOCX, or UTF-8 text file.",
+        ) from error
+
     raise HTTPException(
         status_code=415,
         detail="Unsupported file type. Upload a PDF, DOCX, or TXT file.",
     )
+
 
 
 @app.post("/api/documents/upload")
