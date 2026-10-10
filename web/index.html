@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f7fb">
+    <title>College AI Assistant</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #17233c;
+        background: #f5f7fb;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+        --muted: #66748b;
+        --line: #e4e9f1;
+        --blue: #3559d7;
+        --blue-dark: #2545b5;
+        --surface: #fff;
+      }
+
+      * { box-sizing: border-box; }
+      body { margin: 0; min-width: 320px; }
+      button, input, select, textarea { font: inherit; }
+      .shell { width: min(1040px, calc(100% - 36px)); margin: 0 auto; padding: 52px 0 64px; }
+      header { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-bottom: 28px; }
+      h1 { margin: 0; font-size: clamp(1.8rem, 4vw, 2.45rem); letter-spacing: -.045em; }
+      h2 { margin: 0 0 18px; font-size: 1.17rem; letter-spacing: -.02em; }
+      p { color: var(--muted); line-height: 1.6; }
+      .intro { margin: 9px 0 0; }
+      .badge { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--muted); font-size: .83rem; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: #e0a52e; }
+      .dot.ready { background: #26a269; }
+      .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 24px 0; }
+      .feature, .card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 8px 28px rgba(28, 45, 84, .035); }
+      .feature { padding: 17px 19px; }
+      .feature strong { display: block; margin: 0 0 4px; }
+      .feature span { color: var(--muted); font-size: .91rem; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+      .card { padding: 23px; }
+      .wide { grid-column: 1 / -1; }
+      label { display: block; margin: 0 0 7px; color: #35445d; font-size: .9rem; font-weight: 600; }
+      input, select, textarea { width: 100%; border: 1px solid #d9e0eb; border-radius: 10px; padding: 11px 12px; color: #17233c; background: #fff; outline: none; }
+      input:focus, select:focus, textarea:focus { border-color: #8398ee; box-shadow: 0 0 0 3px rgba(53, 89, 215, .12); }
+      textarea { min-height: 98px; resize: vertical; }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+      .field { margin-bottom: 14px; }
+      button { border: 0; border-radius: 10px; padding: 11px 16px; color: #fff; background: var(--blue); font-weight: 650; cursor: pointer; }
+      button:hover { background: var(--blue-dark); }
+      button:disabled { opacity: .6; cursor: wait; }
+      .secondary { color: #34425b; background: #edf1f7; }
+      .secondary:hover { background: #e2e8f2; }
+      .result { display: none; margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: #eef3ff; color: #263f97; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+      .result.error { background: #fff0ef; color: #a53028; }
+      .hint { margin: -7px 0 15px; font-size: .84rem; }
+      .upload { display: flex; align-items: center; flex-wrap: wrap; gap: 11px; }
+      .upload input { flex: 1 1 230px; }
+      .doc { margin-top: 15px; }
+      details { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 13px; }
+      summary { cursor: pointer; color: #45546d; font-weight: 600; }
+      #documentText { max-height: 220px; overflow: auto; padding: 12px; background: #f7f9fc; border-radius: 9px; color: #49566b; white-space: pre-wrap; font-size: .88rem; }
+      .question-form { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
+      .question-form .field { margin: 0; }
+      .message { min-height: 1px; margin: 12px 0 0; font-size: .87rem; }
+      footer { padding-top: 24px; color: #8490a2; font-size: .82rem; text-align: center; }
+      @media (max-width: 720px) {
+        .shell { padding-top: 34px; }
+        header { flex-direction: column; }
+        .features { grid-template-columns: 1fr; gap: 9px; }
+        .grid { grid-template-columns: 1fr; }
+        .wide { grid-column: auto; }
+        .question-form { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div>
+          <h1>College AI Assistant</h1>
+          <p class="intro">A helpful place for attendance, timetables, and college documents.</p>
+        </div>
+        <div class="badge" role="status"><span id="statusDot" class="dot"></span><span id="statusText">Connecting…</span></div>
+      </header>
+
+      <section class="features" aria-label="Features">
+        <div class="feature"><strong>Attendance calculator</strong><span>Work out your current percentage.</span></div>
+        <div class="feature"><strong>Attendance record</strong><span>Record a subject, date, and status.</span></div>
+        <div class="feature"><strong>Timetable & documents</strong><span>Ask about your schedule or upload a file.</span></div>
+      </section>
+
+      <div class="grid">
+        <section class="card">
+          <h2>Attendance calculator</h2>
+          <form id="calculatorForm">
+            <div class="row">
+              <div class="field"><label for="attended">Classes attended</label><input id="attended" type="number" min="0" step="1" value="0" required></div>
+              <div class="field"><label for="total">Total classes</label><input id="total" type="number" min="1" step="1" value="1" required></div>
+            </div>
+            <button type="submit">Calculate</button>
+          </form>
+          <div id="calculatorResult" class="result" aria-live="polite"></div>
+        </section>
+
+        <section class="card">
+          <h2>Mark attendance</h2>
+          <form id="attendanceForm">
+            <div class="field"><label for="studentName">Student name</label><input id="studentName" value="Rishabh Kumar" maxlength="120" required></div>
+            <div class="field"><label for="subject">Subject</label><input id="subject" maxlength="120" required></div>
+            <div class="row">
+              <div class="field"><label for="attendanceDate">Date</label><input id="attendanceDate" type="date" required></div>
+              <div class="field"><label for="attendanceStatus">Status</label><select id="attendanceStatus"><option>Present</option><option>Absent</option></select></div>
+            </div>
+            <button type="submit">Save attendance</button>
+          </form>
+          <div id="attendanceResult" class="result" aria-live="polite"></div>
+        </section>
+
+        <section class="card wide">
+          <h2>Upload a college document</h2>
+          <p class="hint">PDF, DOCX, or TXT · Maximum 4 MB</p>
+          <form id="uploadForm" class="upload">
+            <input id="documentFile" type="file" accept=".pdf,.docx,.txt" required>
+            <button type="submit">Upload document</button>
+          </form>
+          <div id="uploadResult" class="result" aria-live="polite"></div>
+          <div id="activeDocument" class="doc" hidden>
+            <strong id="documentName"></strong>
+            <details><summary>View extracted text</summary><pre id="documentText"></pre></details>
+          </div>
+        </section>
+
+        <section class="card wide">
+          <h2>Ask your assistant</h2>
+          <div class="field"><label for="question">Your question</label><textarea id="question" maxlength="4000" placeholder="Example: What classes do I have on Monday?"></textarea></div>
+          <div class="question-form">
+            <div class="field"><label for="aiStudentName">Student name for answers</label><input id="aiStudentName" value="Rishabh Kumar" maxlength="120"></div>
+            <button id="askButton" type="button">Ask AI</button>
+          </div>
+          <div id="aiResult" class="result" aria-live="polite"></div>
+          <p id="configMessage" class="message"></p>
+        </section>
+      </div>
+      <footer>Your uploaded document is used to answer questions in this browser session.</footer>
+    </main>
+
+    <script>
+      let documentText = "";
+      let documentName = "";
+
+      const today = new Date();
+      document.getElementById("attendanceDate").value =
+        `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+      function showResult(id, text, isError = false) {
+        const element = document.getElementById(id);
+        element.textContent = text;
+        element.classList.toggle("error", isError);
+        element.style.display = "block";
+      }
+
+      async function request(url, options = {}) {
+        const response = await fetch(url, options);
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.detail || "The request failed.");
+        return body;
+      }
+
+      document.getElementById("calculatorForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try {
+          const result = await request("/api/attendance/calculate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              attended: Number(document.getElementById("attended").value),
+              total: Number(document.getElementById("total").value)
+            })
+          });
+          showResult("calculatorResult", `Attendance percentage: ${result.percentage}%`);
+        } catch (error) {
+          showResult("calculatorResult", error.message, true);
+        }
+      });
+
+      document.getElementById("attendanceForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try {
+          const result = await request("/api/attendance/mark", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              student_name: document.getElementById("studentName").value,
+              subject: document.getElementById("subject").value,
+              attendance_date: document.getElementById("attendanceDate").value,
+              status: document.getElementById("attendanceStatus").value
+            })
+          });
+          showResult("attendanceResult", `Attendance recorded for this request:\n${JSON.stringify(result.record, null, 2)}\n\nNote: Vercel does not keep attendance records between serverless function runs.`);
+        } catch (error) {
+          showResult("attendanceResult", error.message, true);
+        }
+      });
+
+      document.getElementById("uploadForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const file = document.getElementById("documentFile").files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append("file", file);
+        try {
+          const result = await request("/api/documents/upload", { method: "POST", body: formData });
+          documentName = result.name;
+          documentText = result.text;
+          document.getElementById("activeDocument").hidden = false;
+          document.getElementById("documentName").textContent =
+            documentText.trim() ? `Active document: ${documentName}` : `${documentName}: no readable text found`;
+          document.getElementById("documentText").textContent = documentText;
+          showResult("uploadResult", `Uploaded ${documentName}.`);
+        } catch (error) {
+          showResult("uploadResult", error.message, true);
+        }
+      });
+
+      document.getElementById("askButton").addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        const question = document.getElementById("question").value.trim();
+        if (!question) {
+          showResult("aiResult", "Enter a question first.", true);
+          return;
+        }
+        button.disabled = true;
+        try {
+          const result = await request("/api/ask", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              question,
+              student_name: document.getElementById("aiStudentName").value,
+              document_text: documentText
+            })
+          });
+          const tool = result.tool_used ? `\n\nTool used: ${result.tool_used}` : "";
+          showResult("aiResult", `${result.answer || "No answer was returned."}${tool}`);
+        } catch (error) {
+          showResult("aiResult", error.message, true);
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      async function initialize() {
+        try {
+          const health = await request("/api/health");
+          const dot = document.getElementById("statusDot");
+          const status = document.getElementById("statusText");
+          dot.classList.toggle("ready", health.ai_configured);
+          status.textContent = health.ai_configured ? "AI ready" : "AI key not configured";
+          if (!health.ai_configured) {
+            document.getElementById("configMessage").textContent =
+              "To enable AI answers, add OPENAI_API_KEY in Vercel Project Settings → Environment Variables, then redeploy. Attendance tools and timetable lookup still work.";
+          }
+          const timetable = await request("/api/default-document");
+          if (timetable.text) {
+            documentName = timetable.name;
+            documentText = timetable.text;
+            document.getElementById("activeDocument").hidden = false;
+            document.getElementById("documentName").textContent = `Active document: ${documentName}`;
+            document.getElementById("documentText").textContent = documentText;
+          }
+        } catch (error) {
+          document.getElementById("statusText").textContent = "Connection issue";
+          document.getElementById("configMessage").textContent = error.message;
+        }
+      }
+
+      initialize();
+    </script>
+  </body>
+</html>
