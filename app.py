@@ -64,10 +64,15 @@ def home() -> HTMLResponse:
 
 @app.get("/api/health")
 def health() -> dict[str, bool | str]:
+    has_gemini = bool(os.getenv("GEMINI_API_KEY", "").strip())
+    has_openai = bool(os.getenv("OPENAI_API_KEY", "").strip())
+    provider = "gemini" if has_gemini else ("openai" if has_openai else "none")
     return {
         "status": "ok",
-        "ai_configured": bool(os.getenv("OPENAI_API_KEY", "").strip()),
+        "ai_configured": has_gemini or has_openai,
+        "provider": provider,
     }
+
 
 
 @app.get("/api/default-document")
@@ -164,17 +169,29 @@ async def upload_document(file: UploadFile = File(...)) -> dict[str, str]:
     return {"name": filename, "text": text}
 
 
-def _client() -> OpenAI:
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key:
+def _client() -> tuple[OpenAI, str]:
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+
+    if gemini_key:
+        model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        client = OpenAI(
+            api_key=gemini_key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        )
+        return client, model
+    elif openai_key:
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        client = OpenAI(api_key=openai_key)
+        return client, model
+    else:
         raise HTTPException(
             status_code=503,
             detail=(
-                "AI answers are not configured. Add OPENAI_API_KEY under "
-                "Vercel Project Settings > Environment Variables, then redeploy."
+                "AI answers are not configured. Add GEMINI_API_KEY or OPENAI_API_KEY in "
+                "your .env file or Vercel Environment Variables, then restart/redeploy."
             ),
         )
-    return OpenAI(api_key=api_key)
 
 
 @app.post("/api/ask")
@@ -209,104 +226,113 @@ def ask_assistant(payload: AssistantQuestion) -> dict[str, object]:
                 "tool_used": "Timetable Tool",
             }
 
-    client = _client()
+    client, model_name = _client()
     tools = [
         {
             "type": "function",
-            "name": "calculate_attendance",
-            "description": "Calculate attendance percentage.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "attended": {"type": "integer"},
-                    "total": {"type": "integer"},
+            "function": {
+                "name": "calculate_attendance",
+                "description": "Calculate attendance percentage.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "attended": {"type": "number"},
+                        "total": {"type": "number"},
+                    },
+                    "required": ["attended", "total"],
                 },
-                "required": ["attended", "total"],
             },
         },
         {
             "type": "function",
-            "name": "mark_attendance",
-            "description": "Mark student attendance.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "subject": {"type": "string"},
-                    "status": {"type": "string", "enum": ["Present", "Absent"]},
+            "function": {
+                "name": "mark_attendance",
+                "description": "Mark student attendance.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "subject": {"type": "string"},
+                        "status": {"type": "string", "enum": ["Present", "Absent"]},
+                    },
+                    "required": ["subject", "status"],
                 },
-                "required": ["subject", "status"],
             },
         },
     ]
-    instructions = f"""
-You are College AI Assistant.
+
+    system_prompt = f"""You are College AI Assistant.
 Student name: {payload.student_name or "Rishabh Kumar"}
 Today's date: {date.today().isoformat()}
+
 Use the Calculator Tool for attendance percentage.
 Use the Attendance Tool when the student wants to mark attendance.
 Use the supplied college document when relevant. Never invent information.
 Always mention any tool used.
 """
-    try:
-        response = client.responses.create(
-            model=MODEL_NAME,
-            instructions=instructions,
-            input=question,
-            tools=tools,
-        )
-        tool_outputs = []
-        tools_used = []
-        for item in response.output:
-            if item.type != "function_call":
-                continue
-            arguments = json.loads(item.arguments)
-            if item.name == "calculate_attendance":
-                result = {
-                    "percentage": calculate_attendance(
-                        arguments["attended"],
-                        arguments["total"],
-                    )
-                }
-                tools_used.append("Calculator Tool")
-            elif item.name == "mark_attendance":
-                result = mark_attendance(
-                    payload.student_name or "Rishabh Kumar",
-                    arguments["subject"],
-                    date.today().isoformat(),
-                    arguments["status"],
-                )
-                tools_used.append("Attendance Tool")
-            else:
-                continue
-            tool_outputs.append(
-                {
-                    "type": "function_call_output",
-                    "call_id": item.call_id,
-                    "output": json.dumps(result),
-                }
-            )
+    user_content = question
+    if payload.document_text.strip():
+        user_content = f"Document Context:\n{payload.document_text.strip()}\n\nQuestion:\n{question}"
 
-        if tool_outputs:
-            final_response = client.responses.create(
-                model=MODEL_NAME,
-                instructions="Give a clear answer based only on the tool results. Mention which tool was used.",
-                input=[*response.output, *tool_outputs],
-                tools=tools,
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+
+    try:
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+        )
+
+        response_message = response.choices[0].message
+        tools_used = []
+
+        if response_message.tool_calls:
+            messages.append(response_message)
+            for tool_call in response_message.tool_calls:
+                arguments = json.loads(tool_call.function.arguments)
+                if tool_call.function.name == "calculate_attendance":
+                    result = {
+                        "percentage": calculate_attendance(
+                            float(arguments["attended"]),
+                            float(arguments["total"]),
+                        )
+                    }
+                    tools_used.append("Calculator Tool")
+                elif tool_call.function.name == "mark_attendance":
+                    result = mark_attendance(
+                        payload.student_name or "Rishabh Kumar",
+                        arguments["subject"],
+                        date.today().isoformat(),
+                        arguments["status"],
+                    )
+                    tools_used.append("Attendance Tool")
+                else:
+                    result = {}
+
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": json.dumps(result),
+                    }
+                )
+
+            final_response = client.chat.completions.create(
+                model=model_name,
+                messages=messages,
             )
-            answer = final_response.output_text
+            answer = final_response.choices[0].message.content or ""
         else:
-            answer = response.output_text
-    except OpenAIError as error:
-        logger.exception("OpenAI request failed")
+            answer = response_message.content or ""
+    except Exception as error:
+        logger.exception("AI request failed")
         raise HTTPException(
             status_code=502,
-            detail="The AI service request failed. Check the API key and try again.",
-        ) from error
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
-        logger.exception("Could not process the assistant response")
-        raise HTTPException(
-            status_code=502,
-            detail="The assistant returned a response that could not be processed.",
+            detail=f"The AI service request failed: {error}",
         ) from error
 
     return {"answer": answer, "tool_used": ", ".join(tools_used)}
+
