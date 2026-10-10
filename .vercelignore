@@ -1,0 +1,3 @@
+# Ignore subfolder requirements to avoid false multi-service detection in Vercel
+tools/document_parser/requirements.txt
+tools/document_parser/.env
