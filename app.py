@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse
 from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, Field
 
-from tools.attendance import mark_attendance
+from tools.attendance import get_attendance, mark_attendance
 from tools.calculator import calculate_attendance
 from tools.timetable import find_day_timetable
 
@@ -111,6 +111,12 @@ def attendance_mark(payload: AttendanceSubmission) -> dict[str, dict[str, str]]:
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     return {"record": record}
+
+
+@app.get("/api/attendance")
+def attendance_list() -> dict[str, list[dict[str, str]]]:
+    return {"records": get_attendance()}
+
 
 
 def extract_pdf_text_from_bytes(content: bytes) -> str:

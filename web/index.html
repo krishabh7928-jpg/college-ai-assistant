@@ -115,6 +115,10 @@
             <button type="submit">Save attendance</button>
           </form>
           <div id="attendanceResult" class="result" aria-live="polite"></div>
+          <div style="margin-top: 18px;">
+            <strong style="font-size: 0.9rem; color: #35445d;">Saved Attendance Records</strong>
+            <div id="attendanceRecordsContainer" style="margin-top: 8px;"></div>
+          </div>
         </section>
 
         <section class="card wide">
@@ -184,6 +188,31 @@
         }
       });
 
+      async function loadAttendanceRecords() {
+        try {
+          const data = await request("/api/attendance");
+          const container = document.getElementById("attendanceRecordsContainer");
+          if (!data.records || data.records.length === 0) {
+            container.innerHTML = "<p style='font-size:0.83rem; color:var(--muted); margin:4px 0 0;'>No saved attendance records yet.</p>";
+            return;
+          }
+          const html = data.records.map(r => `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:9px 12px; background:#f7f9fc; border:1px solid #eef2f7; border-radius:9px; margin-top:6px; font-size:0.88rem;">
+              <div>
+                <strong>${r.subject}</strong> <span style="color:var(--muted); font-size:0.82rem;">(${r.date})</span>
+                <div style="font-size:0.78rem; color:var(--muted); margin-top:2px;">Student: ${r.student_name}</div>
+              </div>
+              <span style="padding:3px 10px; border-radius:99px; font-size:0.75rem; font-weight:650; color:${r.status === 'Present' ? '#1b7442' : '#b7271e'}; background:${r.status === 'Present' ? '#e2f6eb' : '#fde8e7'};">
+                ${r.status}
+              </span>
+            </div>
+          `).reverse().join("");
+          container.innerHTML = html;
+        } catch (err) {
+          console.error("Failed to load attendance records", err);
+        }
+      }
+
       document.getElementById("attendanceForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         try {
@@ -197,7 +226,8 @@
               status: document.getElementById("attendanceStatus").value
             })
           });
-          showResult("attendanceResult", `Attendance recorded for this request:\n${JSON.stringify(result.record, null, 2)}\n\nNote: Vercel does not keep attendance records between serverless function runs.`);
+          showResult("attendanceResult", `Attendance saved for ${result.record.student_name} (${result.record.subject} - ${result.record.status}).`);
+          await loadAttendanceRecords();
         } catch (error) {
           showResult("attendanceResult", error.message, true);
         }
@@ -261,6 +291,7 @@
             document.getElementById("configMessage").textContent =
               "To enable AI answers, add GEMINI_API_KEY or OPENAI_API_KEY in Vercel Project Settings → Environment Variables, then redeploy. Attendance tools and timetable lookup still work.";
           }
+          await loadAttendanceRecords();
           const timetable = await request("/api/default-document");
           if (timetable.text) {
             documentName = timetable.name;
